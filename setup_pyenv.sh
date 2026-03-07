@@ -880,7 +880,7 @@ create_new_project() {
         # 9. 建立虛擬環境 (pyenv virtualenv)
         if [ "$CREATE_VENV" = true ]; then
             print_info "建立 pyenv 虛擬環境 '$VENV_NAME'..."
-            if ! $VENV_CREATE_CMD; then
+            if ! eval "$VENV_CREATE_CMD"; then
                 print_error "pyenv 虛擬環境建立失敗！"
                 print_info "可能的原因："
                 echo "  • Python $PYTHON_VERSION 未正確安裝"
@@ -1029,7 +1029,7 @@ create_new_project() {
         fi
         
         # 嘗試啟動虛擬環境
-        if ! $VENV_ACTIVATE_CMD; then
+        if ! eval "$VENV_ACTIVATE_CMD"; then
             print_error "虛擬環境啟動失敗！"
             print_info "建議解決方案："
             echo "  • 手動啟動: source $VENV_NAME/bin/activate"
