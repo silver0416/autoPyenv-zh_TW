@@ -3,7 +3,8 @@
 # Pyenv 環境互動式自動設定腳本
 # 使用方法: ./setup_pyenv.sh
 
-set -e  # 遇到錯誤時停止執行
+# 注意：不使用 set -e，因為腳本可能以 source 方式執行
+# 若以 source 執行，set -e 會在遇到錯誤時關閉整個終端
 
 # 顏色定義
 RED='\033[0;31m'
@@ -426,25 +427,26 @@ EOF
     echo -e "  ${CYAN}eval \"\$(pyenv virtualenv-init -)\"${NC}"
     echo ""
     
-    if confirm_action "是否要重新載入配置檔？"; then
-        print_info "重新載入配置檔..."
-        if source "$config_file" 2>/dev/null; then
-            print_success "配置檔重新載入完成"
-            
-            # 再次檢查 pyenv
-            if command -v pyenv &> /dev/null; then
-                print_success "pyenv 現在可以使用了！"
-                return 0
-            else
-                print_warning "請重新啟動終端後再使用"
-                return 1
-            fi
+    if confirm_action "是否要立即套用 pyenv 設定？"; then
+        print_info "套用 pyenv 設定（不重新 source 整個配置檔，避免關閉終端）..."
+        # 直接設定 PATH 與 pyenv 初始化，而非 source 整個 shell 配置檔
+        # （source ~/.bashrc 等可能含有 exit 呼叫或其他副作用，會關閉終端）
+        export PATH="$HOME/.pyenv/bin:$PATH"
+        if command -v pyenv &>/dev/null; then
+            eval "$(pyenv init -)" 2>/dev/null
+            eval "$(pyenv virtualenv-init -)" 2>/dev/null
+            print_success "pyenv 設定已套用"
+            print_success "pyenv 現在可以使用了！"
+            return 0
         else
-            print_warning "配置檔載入可能有問題，請重新啟動終端"
+            print_warning "pyenv 指令仍無法使用，請重新啟動終端後再試"
             return 1
         fi
     else
-        print_info "請記得重新啟動終端或載入配置檔"
+        print_info "請記得重新啟動終端或執行以下指令："
+        echo -e "  ${CYAN}export PATH=\"\$HOME/.pyenv/bin:\$PATH\"${NC}"
+        echo -e "  ${CYAN}eval \"\$(pyenv init -)\"${NC}"
+        echo -e "  ${CYAN}eval \"\$(pyenv virtualenv-init -)\"${NC}"
         return 1
     fi
 }
@@ -571,12 +573,12 @@ main() {
                         else
                             print_warning "pyenv 安裝完成，但需要重新啟動終端"
                             print_info "請重新啟動終端後再執行此腳本"
-                            exit 0
+                            return 0
                         fi
                     else
                         print_error "pyenv 安裝失敗"
                         print_info "請嘗試手動安裝或重新啟動終端後再試"
-                        exit 1
+                        return 1
                     fi
                     ;;
                 2)
@@ -593,11 +595,11 @@ main() {
                     echo "3. 重新啟動終端"
                     echo ""
                     print_info "完成後請重新執行此腳本"
-                    exit 0
+                    return 0
                     ;;
                 3)
                     print_success "再見！ 👋"
-                    exit 0
+                    return 0
                     ;;
                 *)
                     print_warning "請輸入 1-3 之間的數字，你輸入的是: '$install_choice'"
@@ -648,7 +650,7 @@ main() {
                 ;;
             6)
                 print_success "再見！ 👋"
-                exit 0
+                return 0
                 ;;
         esac
         
@@ -756,7 +758,7 @@ create_new_project() {
             print_info "安裝方法："
             echo "  git clone https://github.com/pyenv/pyenv-virtualenv.git \$(pyenv root)/plugins/pyenv-virtualenv"
             echo "  然後重新啟動 shell 或執行: source ~/.bashrc"
-            exit 1
+            return 1
         fi
         
         print_prompt "請輸入虛擬環境名稱"
@@ -798,7 +800,7 @@ create_new_project() {
     
     if ! confirm_action "確認開始設定環境？"; then
         print_warning "操作已取消"
-        exit 0
+        return 0
     fi
     
     echo ""
@@ -811,15 +813,15 @@ create_new_project() {
             print_success "已建立目錄: $PROJECT_PATH"
         else
             print_error "操作已取消"
-            exit 1
+            return 1
         fi
     fi
-    
+
     # 5. 進入專案目錄
     print_info "進入專案目錄: $PROJECT_PATH"
     cd "$PROJECT_PATH" || {
         print_error "無法進入目錄: $PROJECT_PATH"
-        exit 1
+        return 1
     }
     
     # 6. 檢查並安裝 Python 版本
@@ -844,12 +846,12 @@ create_new_project() {
                 echo "  • Ubuntu/Debian: sudo apt update && sudo apt install build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev python-openssl git"
                 echo "  • CentOS/RHEL: sudo yum groupinstall 'Development Tools' && sudo yum install openssl-devel bzip2-devel libffi-devel"
                 echo "  • macOS: 確保已安裝 Xcode Command Line Tools"
-                exit 1
+                return 1
             fi
             print_success "Python $PYTHON_VERSION 安裝完成"
         else
             print_error "無法繼續，需要指定的 Python 版本"
-            exit 1
+            return 1
         fi
     else
         print_success "Python $PYTHON_VERSION 已安裝"
@@ -886,7 +888,7 @@ create_new_project() {
                 echo "  • Python $PYTHON_VERSION 未正確安裝"
                 echo "  • pyenv-virtualenv 插件問題"
                 echo "  • 虛擬環境名稱衝突"
-                exit 1
+                return 1
             fi
             print_success "pyenv 虛擬環境 '$VENV_NAME' 建立完成"
         fi
@@ -900,7 +902,7 @@ create_new_project() {
             print_info "請檢查："
             echo "  • pyenv versions 中是否有 $VENV_NAME"
             echo "  • pyenv-virtualenv 插件是否正常工作"
-            exit 1
+            return 1
         fi
         
         # 設定專案目錄使用此虛擬環境
@@ -915,7 +917,7 @@ create_new_project() {
             print_info "手動檢查："
             echo "  • pyenv versions  # 查看所有版本"
             echo "  • ls -la .python-version  # 檢查是否建立了配置檔"
-            exit 1
+            return 1
         fi
         
         # 驗證設定是否成功
@@ -1012,7 +1014,7 @@ create_new_project() {
                 echo "  • Python 版本不支援 venv 模組"
                 echo "  • 磁碟空間不足"
                 echo "  • 權限問題"
-                exit 1
+                return 1
             fi
             print_success "虛擬環境 '$VENV_NAME' 建立完成"
         fi
@@ -1025,7 +1027,7 @@ create_new_project() {
             print_error "虛擬環境啟動腳本不存在！"
             print_info "建議解決方案："
             echo "  • 重新建立虛擬環境: rm -rf $VENV_NAME && python -m venv $VENV_NAME"
-            exit 1
+            return 1
         fi
         
         # 嘗試啟動虛擬環境
@@ -1033,7 +1035,7 @@ create_new_project() {
             print_error "虛擬環境啟動失敗！"
             print_info "建議解決方案："
             echo "  • 手動啟動: source $VENV_NAME/bin/activate"
-            exit 1
+            return 1
         fi
         
         # 驗證虛擬環境是否正確啟動
