@@ -517,6 +517,81 @@ show_available_versions() {
     echo ""
 }
 
+
+# 偵測 pyproject.toml 的相依套件管理工具
+get_pyproject_install_command() {
+    local pyproject_file="${1:-pyproject.toml}"
+
+    if [ ! -f "$pyproject_file" ]; then
+        return 1
+    fi
+
+    # 優先使用專案宣告或鎖定檔對應的工具；若工具不存在，回退到 pip 安裝專案相依套件。
+    if grep -Eq '^\[tool\.poetry(\.|\])' "$pyproject_file"; then
+        if command -v poetry &> /dev/null; then
+            echo "poetry install"
+        else
+            echo "pip install -e ."
+        fi
+    elif grep -Eq '^\[tool\.pdm(\.|\])' "$pyproject_file"; then
+        if command -v pdm &> /dev/null; then
+            echo "pdm install"
+        else
+            echo "pip install -e ."
+        fi
+    elif [ -f "uv.lock" ] && command -v uv &> /dev/null; then
+        echo "uv pip install -e ."
+    elif grep -Eq '^\[project\]|^dependencies[[:space:]]*=' "$pyproject_file"; then
+        echo "pip install -e ."
+    else
+        return 1
+    fi
+}
+
+# 偵測並安裝 TOML 專案相依套件
+install_toml_dependencies() {
+    local toml_files
+    toml_files=$(find . -maxdepth 2 -type f -name "*.toml" \
+        ! -path "*/$VENV_NAME/*" \
+        ! -path "*/.venv/*" \
+        ! -path "*/venv/*" \
+        ! -path "*/env/*" 2>/dev/null | sort)
+
+    if [ -z "$toml_files" ]; then
+        return 0
+    fi
+
+    print_warning "發現專案內的 TOML 設定檔："
+    echo "$toml_files" | while read -r toml_file; do
+        if [ -n "$toml_file" ]; then
+            echo "  • $toml_file"
+        fi
+    done
+
+    if [ -f "pyproject.toml" ]; then
+        local install_cmd
+        if install_cmd=$(get_pyproject_install_command "pyproject.toml"); then
+            print_info "偵測到 pyproject.toml，可用以下指令安裝專案相依套件："
+            echo -e "  ${CYAN}$install_cmd${NC}"
+            if confirm_action "是否要依據 pyproject.toml 安裝相依套件？"; then
+                print_info "執行: $install_cmd"
+                if eval "$install_cmd"; then
+                    print_success "TOML 相依套件安裝完成"
+                else
+                    print_error "TOML 相依套件安裝失敗"
+                    print_info "你可以稍後手動執行：$install_cmd"
+                    return 1
+                fi
+            fi
+        else
+            print_warning "找到 pyproject.toml，但無法判斷可自動安裝的相依套件格式"
+            print_info "支援格式：PEP 621 [project]、Poetry [tool.poetry]、PDM [tool.pdm]"
+        fi
+    else
+        print_info "目前僅會自動安裝 pyproject.toml 宣告的 Python 相依套件"
+    fi
+}
+
 # 驗證路徑
 validate_path() {
     local path="$1"
@@ -1051,7 +1126,9 @@ create_new_project() {
     print_info "升級 pip..."
     pip install --upgrade pip > /dev/null 2>&1
     
-    # 12. 處理 requirements.txt
+    # 12. 處理 TOML 與 requirements.txt 相依套件
+    install_toml_dependencies
+    
     if [ -f "requirements.txt" ]; then
         print_warning "發現 requirements.txt 檔案"
         if confirm_action "是否要安裝相依套件？"; then
